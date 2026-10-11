@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Prisma, type PosCart } from "@prisma/client";
+import { onlinePaymentsEnabled } from "../../config/env";
 import { prisma, withTransaction, type Tx } from "../../database/prisma";
 import { AppError, badRequest, forbidden, invalidState, notFound, unprocessable } from "../../common/errors/app-error";
 import { applyBps } from "../../common/utils/money";
@@ -40,8 +41,14 @@ export const checkoutSchema = z
   })
   .refine((c) => !["UPI_MANUAL", "CARD_MANUAL"].includes(c.paymentMethod) || !!c.referenceNumber, { message: "Enter the UPI / card transaction reference", path: ["referenceNumber"] });
 
+/** The payment methods switched on in Settings, without the gateway while none is connected. */
+async function posSettings() {
+  const pos = await getSetting("pos");
+  return onlinePaymentsEnabled ? pos : { ...pos, enabledPaymentMethods: pos.enabledPaymentMethods.filter((m) => m !== "RAZORPAY") };
+}
+
 export async function posConfig() {
-  const { enabledPaymentMethods, maxManualDiscountBps } = await getSetting("pos");
+  const { enabledPaymentMethods, maxManualDiscountBps } = await posSettings();
   return { enabledPaymentMethods, maxManualDiscountBps };
 }
 
@@ -258,7 +265,7 @@ export async function abandonCart(cartId: string, cashier: Principal) {
  * gateway confirms, exactly like an online order.
  */
 export async function checkout(cartId: string, input: z.infer<typeof checkoutSchema>, cashier: Principal, ctx: AuditContext) {
-  const pos = await getSetting("pos");
+  const pos = await posSettings();
   if (!pos.enabledPaymentMethods.includes(input.paymentMethod)) throw badRequest(`${input.paymentMethod} is not enabled for in-store billing`);
 
   const result = await withTransaction(async (tx) => {

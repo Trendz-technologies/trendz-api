@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
+import { onlinePaymentsEnabled } from "../../config/env";
 import { logger } from "../../config/logger";
 import { prisma, withTransaction } from "../../database/prisma";
 import { AppError, badRequest, invalidState, notFound } from "../../common/errors/app-error";
@@ -295,6 +296,8 @@ export async function reconcilePayment(paymentId: string, ctx: AuditContext) {
 
 /** Periodic: settle open payments that never got a callback or webhook. */
 export async function reconcileOpenPayments() {
+  // No gateway to ask.
+  if (!onlinePaymentsEnabled) return { checked: 0, paid: 0 };
   const open = await prisma.payment.findMany({
     where: { provider: "RAZORPAY", status: { in: ["CREATED", "PENDING"] }, createdAt: { lt: new Date(Date.now() - 5 * 60_000), gt: new Date(Date.now() - 3 * 86_400_000) } },
     select: { orderId: true },
@@ -314,6 +317,8 @@ export async function reconcileOpenPayments() {
 
 /** Cancels unpaid orders whose stock hold has expired (after a last reconciliation). */
 export async function expireUnpaidOrders() {
+  // An order is only cancelled after the gateway has been asked one last time; with no gateway, none is.
+  if (!onlinePaymentsEnabled) return { expired: 0 };
   const due = await prisma.order.findMany({
     where: { status: "PENDING", paymentStatus: { notIn: ["PAID"] }, reservationExpiresAt: { lt: new Date() } },
     select: { id: true },

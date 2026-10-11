@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Prisma, type ShipmentStatus } from "@prisma/client";
 import { logger } from "../../config/logger";
-import { env } from "../../config/env";
+import { courierEnabled, env } from "../../config/env";
 import { prisma, withTransaction } from "../../database/prisma";
 import { AppError, badRequest, invalidState, notFound } from "../../common/errors/app-error";
 import { safeEqual, sha256 } from "../../common/utils/crypto";
@@ -226,6 +226,8 @@ export async function refreshTracking(id: string) {
 
 /** Periodic sync for parcels that are still moving (fallback when webhooks are missed). */
 export async function syncActiveShipments() {
+  // No courier service to ask.
+  if (!courierEnabled) return { synced: 0, total: 0 };
   const active = await prisma.shipment.findMany({
     where: { status: { in: ACTIVE }, provider: { not: "MANUAL" }, createdAt: { gt: new Date(Date.now() - 45 * 86_400_000) } },
     select: { id: true },

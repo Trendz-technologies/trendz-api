@@ -157,6 +157,8 @@ Customers rate and review products they have received.
 | Shipping | `SHIPPING_PROVIDER=mock` | Creates AWBs and labels. Admin → Order → "Simulate next courier status" walks a shipment through the lifecycle. |
 | Storage | MinIO (`STORAGE_PROVIDER=r2`) | The same S3 API calls the app makes against Cloudflare R2 |
 
+`PAYMENT_PROVIDER=none` and `SHIPPING_PROVIDER=none` are not adapters: they say that no gateway or courier service is connected yet, and nothing is simulated. With no gateway the API takes no online orders and no gateway payments (the storefront says so at checkout, the billing counter keeps cash and UPI); with no courier service, shipments are entered by hand. Unlike the mock adapters they are allowed in production, which is how a shop without those accounts is hosted (DEPLOYMENT.md §1).
+
 ### Switching to real providers
 
 Set the variables in `.env` (all documented in `.env.example`) and restart the API and worker.

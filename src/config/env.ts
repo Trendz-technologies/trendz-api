@@ -34,7 +34,8 @@ const schema = z.object({
   COOKIE_SECURE: bool,
   COOKIE_DOMAIN: optionalString,
 
-  PAYMENT_PROVIDER: z.enum(["razorpay", "mock"]).default("mock"),
+  // none = no payment gateway is connected yet: online orders and gateway payments are refused, nothing is simulated.
+  PAYMENT_PROVIDER: z.enum(["razorpay", "mock", "none"]).default("mock"),
   RAZORPAY_KEY_ID: optionalString,
   RAZORPAY_KEY_SECRET: optionalString,
   RAZORPAY_WEBHOOK_SECRET: optionalString,
@@ -79,7 +80,8 @@ const schema = z.object({
   SMTP_PASSWORD: optionalString,
   SMTP_SECURE: bool,
 
-  SHIPPING_PROVIDER: z.enum(["shiprocket", "mock"]).default("mock"),
+  // none = no courier service is connected yet: shipments are entered by hand (courier and tracking number).
+  SHIPPING_PROVIDER: z.enum(["shiprocket", "mock", "none"]).default("mock"),
   SHIPPING_API_KEY: optionalString,
   SHIPPING_API_SECRET: optionalString,
   SHIPPING_PICKUP_LOCATION: z.string().default("Primary"),
@@ -136,3 +138,7 @@ export const env = load();
 export type Env = typeof env;
 export const isProduction = env.NODE_ENV === "production";
 export const isTest = env.NODE_ENV === "test";
+/** False while no payment gateway is connected (PAYMENT_PROVIDER=none): the shop takes no online orders and no gateway payments. */
+export const onlinePaymentsEnabled = env.PAYMENT_PROVIDER !== "none";
+/** False while no courier service is connected (SHIPPING_PROVIDER=none). */
+export const courierEnabled = env.SHIPPING_PROVIDER !== "none";

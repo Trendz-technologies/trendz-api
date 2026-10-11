@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Prisma, type Address, type OrderStatus, type SalesChannel } from "@prisma/client";
+import { onlinePaymentsEnabled } from "../../config/env";
 import { logger } from "../../config/logger";
 import { prisma, withTransaction, type Tx } from "../../database/prisma";
 import { nextOrderNumber } from "../../database/sequences";
@@ -280,10 +281,12 @@ export async function checkoutQuote(userId: string, input: z.infer<typeof quoteS
     })
     .filter((x): x is string => !!x);
   if (quote.coupon && !quote.coupon.valid && quote.coupon.message) issues.push(quote.coupon.message);
-  return { ...quote, shippingAddress: addressSnapshot(address), issues, canPlaceOrder: issues.length === 0 && quote.grandTotal >= 100 };
+  return { ...quote, shippingAddress: addressSnapshot(address), issues, canPlaceOrder: onlinePaymentsEnabled && issues.length === 0 && quote.grandTotal >= 100 };
 }
 
 export async function placeOnlineOrder(userId: string, input: z.infer<typeof placeOrderSchema>, idempotencyKey: string) {
+  // An online order holds stock until it is paid; with no way to pay, none is taken.
+  if (!onlinePaymentsEnabled) throw new AppError(503, "ONLINE_ORDERS_UNAVAILABLE", "Online ordering is not available yet.");
   const checkout = await getSetting("checkout");
   const shipping = await getOwnedAddress(userId, input.shippingAddressId);
   const billing = input.billingAddressId ? await getOwnedAddress(userId, input.billingAddressId) : shipping;
@@ -459,7 +462,7 @@ export async function getOrderForCustomer(userId: string, orderNumber: string) {
     ...rest,
     payments: payments.map((p) => ({ id: p.id, provider: p.provider, method: p.method, status: p.status, amount: p.amount, paidAt: p.paidAt })),
     canCancel: CUSTOMER_CANCELLABLE.has(order.status),
-    canPay: order.status === "PENDING" && order.paymentStatus !== "PAID" && (!order.reservationExpiresAt || order.reservationExpiresAt > new Date()),
+    canPay: onlinePaymentsEnabled && order.status === "PENDING" && order.paymentStatus !== "PAID" && (!order.reservationExpiresAt || order.reservationExpiresAt > new Date()),
     canReturn: order.status === "DELIVERED" && !!returnWindowEnds && returnWindowEnds > new Date(),
     returnWindowEnds,
   };

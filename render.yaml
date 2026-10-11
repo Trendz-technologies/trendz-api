@@ -63,10 +63,12 @@ services:
       - key: CLOUDINARY_FOLDER
         sync: false
 
-      # The API refuses to start in production with the mock payment, SMS or shipping
-      # adapters, so these need real accounts (Razorpay test-mode keys are accepted).
+      # none = no payment gateway connected yet: the shop takes no online orders (the storefront
+      # says so) and the billing counter takes cash and UPI. The mock gateway is refused in
+      # production. When the Razorpay account exists: enter its three keys on Render's
+      # Environment page first, then set this to razorpay and push.
       - key: PAYMENT_PROVIDER
-        value: razorpay
+        value: none
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -87,8 +89,11 @@ services:
       - key: SMS_TEMPLATE_SHIPPING
         sync: false
 
+      # none = no courier service connected yet: shipments are entered by hand. For Shiprocket:
+      # enter its keys and the webhook token on the Environment page first, then set this to
+      # shiprocket and push.
       - key: SHIPPING_PROVIDER
-        value: shiprocket
+        value: none
       - key: SHIPPING_API_KEY
         sync: false
       - key: SHIPPING_API_SECRET
