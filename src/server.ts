@@ -15,17 +15,25 @@ const server = app.listen(env.PORT, () => {
 server.keepAliveTimeout = 65_000;
 server.headersTimeout = 66_000;
 
-// A host that runs one process (Render's free plan has no background worker)
-// does the worker's job here. The API keeps serving if the jobs cannot start.
-let stopWorkers: (() => Promise<void>) | undefined;
-if (env.RUN_WORKER_IN_API) {
-  startWorkers().then(
-    (stop) => (stopWorkers = stop),
-    (err) => logger.error({ err }, "background jobs failed to start in the API process"),
-  );
-}
-
 let shuttingDown = false;
+
+// A host that runs one process (Render's free plan has no background worker)
+// does the worker's job here. The API keeps serving if the jobs cannot start,
+// and tries again every minute until they do.
+const JOBS_RETRY_MS = 60_000;
+let stopWorkers: (() => Promise<void>) | undefined;
+async function startJobs() {
+  try {
+    const stop = await startWorkers();
+    if (shuttingDown) await stop();
+    else stopWorkers = stop;
+  } catch (err) {
+    logger.error({ err }, "background jobs failed to start in the API process; trying again in a minute");
+    if (!shuttingDown) setTimeout(() => void startJobs(), JOBS_RETRY_MS).unref();
+  }
+}
+if (env.RUN_WORKER_IN_API) void startJobs();
+
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;

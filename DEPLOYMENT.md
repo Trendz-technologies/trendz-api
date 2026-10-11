@@ -51,7 +51,11 @@ MSG91, Shiprocket and Brevo keys can be added later. Until they are, the API run
 
 ## 2. Database (Supabase)
 
-Use **a project of its own for the hosted site**, not the one a developer's machine points at. Two reasons: the jobs that run every minute (releasing unpaid orders, sending queued notifications) would otherwise run from both places against the same rows, and test orders would mix with real ones.
+Use **a project of its own for the hosted site**, not the one a developer's machine points at. Three reasons:
+
+- The jobs that run every minute (releasing unpaid orders, sending queued notifications) would otherwise run from both places against the same rows, and a notification could be sent twice.
+- Test orders would mix with real ones.
+- The session pooler allows a fixed number of clients per database user (15 on the smallest size; Database → Connection pooling shows the figure). Every process takes up to 5 (`connection_limit`), and each deploy's build connects as well while the previous instance is still up, so a shared project runs into "max clients reached".
 
 1. Create the project in the region closest to the API: Singapore (`ap-southeast-1`) for the Render region in `render.yaml`. Keep the database password.
 2. Copy the **session pooler** string (Connect → Session pooler, port 5432) and add `?schema=public&connection_limit=5&connect_timeout=30` to it. This is `DATABASE_URL`. The transaction pooler (port 6543) is not used, and the direct address is IPv6 only.
