@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { isProduction } from "../../config/env";
+import { courierEnabled, isProduction } from "../../config/env";
 import { authenticate, requireStaff } from "../../common/middleware/authenticate";
 import { requirePermission } from "../../common/guards/permissions";
 import { rateLimit } from "../../common/middleware/rate-limit";
@@ -20,7 +20,8 @@ shippingRouter.post("/rates", rateLimit({ name: "ship-rates", points: 30, durati
     .parse(req.body);
   if (!isIndianPincode(postalCode)) throw badRequest("Enter a valid 6-digit PIN code");
   const settings = await getSetting("shipping");
-  if (settings.mode === "FLAT") {
+  // With no courier service connected there are no courier rates to ask for.
+  if (settings.mode === "FLAT" || !courierEnabled) {
     return ok(res, { serviceable: true, amount: settings.flatRate, freeShippingThreshold: settings.freeShippingThreshold });
   }
   ok(res, { serviceable: true, amount: await shipping.shippingRateFor(postalCode, weightGrams, value), freeShippingThreshold: settings.freeShippingThreshold });

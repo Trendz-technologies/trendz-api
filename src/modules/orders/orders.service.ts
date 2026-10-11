@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { Prisma, type Address, type OrderStatus, type SalesChannel } from "@prisma/client";
-import { onlinePaymentsEnabled } from "../../config/env";
+import { courierEnabled, onlinePaymentsEnabled } from "../../config/env";
 import { logger } from "../../config/logger";
 import { prisma, withTransaction, type Tx } from "../../database/prisma";
 import { nextOrderNumber } from "../../database/sequences";
@@ -346,10 +346,10 @@ export async function placeOnlineOrder(userId: string, input: z.infer<typeof pla
   return getOrderForCustomer(userId, order.orderNumber);
 }
 
-/** Courier rate when shipping.mode = PROVIDER_RATES (otherwise the flat rate applies). */
+/** Courier rate when shipping.mode = PROVIDER_RATES and a courier service is connected (otherwise the flat rate applies). */
 async function providerRate(postalCode: string, lines: { variantId: string; quantity: number }[]) {
   const { mode } = await getSetting("shipping");
-  if (mode !== "PROVIDER_RATES" || !lines.length) return null;
+  if (mode !== "PROVIDER_RATES" || !courierEnabled || !lines.length) return null;
   const weight = await cartWeightGrams(lines);
   const value = (await priceLines(lines, { channel: "ONLINE", includeShipping: false })).grandTotal;
   return shippingRateFor(postalCode, weight, value);
@@ -378,6 +378,10 @@ export async function cancelOrder(orderId: string, opts: { reason: string; actor
       throw invalidState(opts.by === "customer" ? "This order can no longer be cancelled. Contact support or request a return." : `Orders that are ${order.status} cannot be cancelled`);
     }
     const paid = order.paymentStatus === "PAID" || order.paymentStatus === "PARTIALLY_REFUNDED";
+    // A gateway payment is refunded through the gateway: without one, the order is not cancelled on the promise of a refund.
+    if (paid && !onlinePaymentsEnabled && (await tx.payment.count({ where: { orderId, provider: "RAZORPAY", status: { in: ["PAID", "PARTIALLY_REFUNDED"] } } })) > 0) {
+      throw new AppError(503, "PAYMENTS_UNAVAILABLE", "This order was paid through the payment gateway, which is not connected. It can be cancelled and refunded once it is.");
+    }
     if (order.status === "PENDING") {
       await releaseReservations(tx, { orderId, orderNumber: order.orderNumber, userId: opts.actor.userId, reason: `Order cancelled: ${opts.reason}` });
       await tx.payment.updateMany({ where: { orderId, status: { in: ["CREATED", "PENDING"] } }, data: { status: "FAILED", failureReason: "Order cancelled" } });

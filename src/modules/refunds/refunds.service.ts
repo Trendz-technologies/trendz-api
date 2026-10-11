@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { Prisma, type Refund } from "@prisma/client";
+import { onlinePaymentsEnabled } from "../../config/env";
 import { logger } from "../../config/logger";
 import { prisma, withTransaction, type Tx } from "../../database/prisma";
 import { nextFinancialYearNumber } from "../../database/sequences";
 import { AppError, badRequest, invalidState, notFound } from "../../common/errors/app-error";
 import { pageArgs, pageMeta, type Pagination } from "../../common/utils/http";
-import { paymentGateway } from "../../integrations/razorpay";
+import { paymentGateway, paymentsUnavailable } from "../../integrations/razorpay";
 import type { GatewayRefund } from "../../integrations/razorpay/gateway.types";
 import { audit, type AuditContext } from "../audit/audit.service";
 import { issueCreditNoteForRefund } from "../invoices/invoices.service";
@@ -26,6 +27,8 @@ const REFUNDABLE_STATUSES = ["PAID", "PARTIALLY_REFUNDED"] as const;
 /** Refunds whose money is gone or committed. FAILED refunds paid nothing. */
 const LIVE_REFUND_STATUSES = ["PENDING", "PROCESSING", "PROCESSED"] as const;
 const rupees = (paise: number) => `₹${(paise / 100).toFixed(2)}`;
+/** A gateway payment can only be refunded through the gateway: without one, no refund is recorded and no number is used. */
+const gatewayNeeded = () => paymentsUnavailable("This payment was made through the payment gateway, which is not connected. It can be refunded once it is.");
 
 /**
  * Refunds recorded but not yet confirmed by the gateway (PENDING). Their
@@ -114,6 +117,7 @@ export async function createRefund(input: z.infer<typeof refundSchema>, ctx: Aud
     if (!allowPartial && amount !== refundable) throw badRequest("Partial refunds are disabled in settings");
     const payment = payments.find((p) => available.get(p.id)! >= amount);
     if (!payment) throw badRequest("This refund spans several payments; refund each payment separately");
+    if (payment.provider === "RAZORPAY" && !onlinePaymentsEnabled) throw gatewayNeeded();
     if (input.returnRequestId) {
       const rr = await tx.returnRequest.findFirst({ where: { id: input.returnRequestId, orderId: order.id }, select: { id: true } });
       if (!rr) throw badRequest("Return request does not belong to this order");
@@ -206,6 +210,7 @@ export async function retryRefund(refundId: string, ctx: AuditContext): Promise<
   if (!current) throw notFound("Refund");
   if (current.status !== "FAILED") throw invalidState("Only failed refunds can be retried");
   if (current.payment.provider !== "RAZORPAY" || !current.payment.razorpayPaymentId) throw invalidState("Only gateway refunds can be retried");
+  if (!onlinePaymentsEnabled) throw gatewayNeeded();
   const earlier = await findGatewayRefund(current.payment.razorpayPaymentId, current.id);
 
   await withTransaction(async (tx) => {

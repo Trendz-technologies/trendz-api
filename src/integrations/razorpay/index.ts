@@ -20,7 +20,7 @@ export function paymentGateway(): PaymentGateway {
   return gateway;
 }
 
-export const paymentsUnavailable = () => new AppError(503, "PAYMENTS_UNAVAILABLE", "Online payment is not available yet.");
+export const paymentsUnavailable = (message = "Online payment is not available yet.") => new AppError(503, "PAYMENTS_UNAVAILABLE", message);
 
 export function mockGateway(): MockPaymentGateway | null {
   const g = paymentGateway();
