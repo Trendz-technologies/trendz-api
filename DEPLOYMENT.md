@@ -73,6 +73,7 @@ Never run `prisma migrate dev`, `prisma db push` or `prisma migrate reset` again
    | `WEB_URL` | The web app's address, for example `https://trendz.vercel.app`, without a trailing slash. It must be an address, so enter the one you plan to use; correct it after §5 if it turns out different |
    | `DATABASE_URL` | The string from §2 |
    | `CLOUDINARY_URL` | `cloudinary://<api key>:<api secret>@<cloud name>` |
+   | `CLOUDINARY_FOLDER` | The folder in the Cloudinary account that this database's pictures are in. A new database: `trendz`. A database copied from a development machine: the folder that machine used (`CLOUDINARY_FOLDER` in its `.env`), otherwise none of its pictures show |
    | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | §1 |
    | `SHIPPING_WEBHOOK_TOKEN` | §1 |
    | `SMS_*`, `SHIPPING_API_KEY`, `SHIPPING_API_SECRET`, `EMAIL_API_KEY`, `EMAIL_FROM_ADDRESS` | Leave empty until the accounts exist (§6) |
@@ -82,7 +83,9 @@ Never run `prisma migrate dev`, `prisma db push` or `prisma migrate reset` again
 
 If the deploy fails with "Unsafe production configuration" or "Invalid environment configuration", the log lists exactly which values to fix (Render → the service → Environment).
 
-`CLOUDINARY_FOLDER` is `trendz` in `render.yaml`. An environment that shares a Cloudinary account with another must use a folder of its own.
+The values Render asked for are changed later on the service's Environment page. The values written in `render.yaml` (`TRUST_PROXY`, the provider names, …) are changed in the file: Render puts the file's value back every time it syncs the Blueprint.
+
+Environments with databases of their own use a Cloudinary folder each (`trendz` for the live shop, `trendz-dev` for development), so their pictures stay apart.
 
 ## 4. The first admin
 
@@ -121,7 +124,7 @@ All four values are fixed when the web app is built: after changing one, redeplo
 
 ## 6. Providers
 
-Values go on the Render service's Environment page; saving redeploys the API.
+The keys go on the Render service's Environment page; saving redeploys the API.
 
 | Provider | In the provider's dashboard | On Render |
 | --- | --- | --- |
@@ -190,7 +193,8 @@ Rehearse a restore every quarter.
 | The site loads, every API call fails or the first one after a pause is slow | The API is asleep or not deployed. Open `https://<api>.onrender.com/api/health`. Check `API_INTERNAL_URL` on Vercel, then redeploy the web app |
 | Pictures do not show, uploads are refused by the browser | `NEXT_PUBLIC_MEDIA_ORIGIN` on Vercel, then redeploy |
 | Signing in works, the next request is signed out | `COOKIE_DOMAIN` must stay empty: the cookies belong to the Vercel address |
-| "Too many requests" for everyone at once, or the wrong IP in Admin → Audit logs | `TRUST_PROXY`. Sign in and look at the newest row in Admin → Audit logs: it should show your own public IP address. If it shows another, change `TRUST_PROXY` by one (3 → 2 or 4) |
+| "Too many requests" for everyone at once, or the wrong IP in Admin → Audit logs | `TRUST_PROXY`. Sign in and look at the newest row in Admin → Audit logs: it should show your own public IP address. If it shows another, change `TRUST_PROXY` in `render.yaml` by one (3 → 2 or 4) and push |
+| The site works but no product, category or banner picture shows | `CLOUDINARY_FOLDER` on Render is not the folder this database's pictures are in (§3) |
 | Payments stuck "pending" | The webhook address and secret in Razorpay; Admin → Payments → Reconcile |
 | Pictures stay "Processing" | The jobs are not running: `RUN_WORKER_IN_API` must be `true` on Render. Then `npm run storage:check` from a developer's machine with the same Cloudinary values |
 | Emails or SMS not arriving | Admin → Notifications: failed rows show the provider's error. Check SPF/DKIM and the DLT templates |

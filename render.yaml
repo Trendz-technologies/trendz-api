@@ -57,8 +57,11 @@ services:
       # cloudinary://<api key>:<api secret>@<cloud name>
       - key: CLOUDINARY_URL
         sync: false
+      # The folder this database's pictures are in: the API puts it in front of every picture's
+      # address. A new database: trendz. A database copied from a development machine: the
+      # folder that machine used (CLOUDINARY_FOLDER in its .env), or its pictures will not show.
       - key: CLOUDINARY_FOLDER
-        value: trendz
+        sync: false
 
       # The API refuses to start in production with the mock payment, SMS or shipping
       # adapters, so these need real accounts (Razorpay test-mode keys are accepted).
