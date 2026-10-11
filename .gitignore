@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+
+# Environment files must never be committed. Only *.example files are tracked.
+.env
+.env.*
+!.env.example
+!.env.test.example
+
+# Generated
+*.tsbuildinfo
+storage/

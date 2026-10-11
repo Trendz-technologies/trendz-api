@@ -1,0 +1,75 @@
+# Local development infrastructure only.
+# The hosted API runs on Render (render.yaml) with its database on Supabase,
+# pictures on Cloudinary and a real email provider (see DEPLOYMENT.md).
+#
+# Ports are deliberately non-default so this stack can run next to other
+# projects on the same machine.
+#
+# PostgreSQL: by default the app uses the PostgreSQL server installed on this
+# machine (the one pgAdmin manages, port 5432; see infra/postgres/local-setup.sql).
+# To use a throwaway Docker database instead: `docker compose --profile docker-db up -d`
+# and point DATABASE_URL at port 5544.
+name: trendz
+
+services:
+  postgres:
+    profiles: ["docker-db"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trendz
+      POSTGRES_PASSWORD: trendz_local_pw
+      POSTGRES_DB: trendz
+    ports:
+      - "5544:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trendz -d trendz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6390:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # S3-compatible object storage standing in for Cloudflare R2 locally.
+  minio:
+    image: pgsty/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: trendz_minio
+      MINIO_ROOT_PASSWORD: trendz_minio_secret
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    volumes:
+      - miniodata:/data
+    # The bucket is created by `npm run storage:init`, which uses
+    # the same S3 API calls the app uses against Cloudflare R2.
+
+  # Catches all outgoing email locally. Web UI: http://localhost:8125
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    ports:
+      - "1125:1025"
+      - "8125:8025"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

@@ -1,0 +1,117 @@
+# Render Blueprint for the Trendz API (https://render.com/docs/blueprint-spec).
+# In Render: New → Blueprint → choose this repository. Render asks once for
+# every value marked `sync: false`; DEPLOYMENT.md says what goes in each.
+#
+# Free plan: the service is one process, so it also runs the background jobs
+# (RUN_WORKER_IN_API). It sleeps after 15 minutes without a request and no job
+# runs while it sleeps. DEPLOYMENT.md → "What the free plans mean".
+services:
+  - type: web
+    name: trendz-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    # devDependencies hold the compiler, Prisma's command line and tsx, which the build and db:deploy need.
+    # db:deploy applies the committed migrations (it only ever adds) and closes the tables to Supabase's own REST API.
+    # Never add db:seed here.
+    buildCommand: npm ci --include=dev && npm run db:generate && npm run build && npm run db:deploy
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: RUN_WORKER_IN_API
+        value: "true"
+      # Vercel, Render's edge and Render's router stand between a visitor and the API.
+      - key: TRUST_PROXY
+        value: "3"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: LOG_LEVEL
+        value: info
+
+      # The web app's address on Vercel, e.g. https://trendz.vercel.app (no trailing slash).
+      - key: WEB_URL
+        sync: false
+
+      # Supabase → Connect → Session pooler (port 5432), ending in
+      # ?schema=public&connection_limit=5&connect_timeout=30
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: trendz-redis
+          property: connectionString
+
+      - key: JWT_SECRET
+        generateValue: true
+      - key: OTP_SECRET
+        generateValue: true
+
+      # Pictures. With cloudinary the job only asks Cloudinary for the sizes; with r2 the
+      # API process would resize every picture itself, which this instance is too small for.
+      - key: STORAGE_PROVIDER
+        value: cloudinary
+      # cloudinary://<api key>:<api secret>@<cloud name>
+      - key: CLOUDINARY_URL
+        sync: false
+      - key: CLOUDINARY_FOLDER
+        value: trendz
+
+      # The API refuses to start in production with the mock payment, SMS or shipping
+      # adapters, so these need real accounts (Razorpay test-mode keys are accepted).
+      - key: PAYMENT_PROVIDER
+        value: razorpay
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+
+      - key: SMS_PROVIDER
+        value: msg91
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_SENDER_ID
+        sync: false
+      - key: SMS_TEMPLATE_OTP
+        sync: false
+      - key: SMS_TEMPLATE_ORDER
+        sync: false
+      - key: SMS_TEMPLATE_SHIPPING
+        sync: false
+
+      - key: SHIPPING_PROVIDER
+        value: shiprocket
+      - key: SHIPPING_API_KEY
+        sync: false
+      - key: SHIPPING_API_SECRET
+        sync: false
+      - key: SHIPPING_PICKUP_LOCATION
+        value: Primary
+      - key: SHIPPING_WEBHOOK_TOKEN
+        sync: false
+
+      # Render's free plan blocks SMTP, so email goes through Brevo's web API.
+      - key: EMAIL_PROVIDER
+        value: brevo
+      - key: EMAIL_API_KEY
+        sync: false
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: Trendz
+
+  # Queues, rate limits and cache. Kept in memory only on the free plan: a restart empties it
+  # (jobs that were committed to the database are queued again by the sweep jobs).
+  - type: keyvalue
+    name: trendz-redis
+    plan: free
+    region: singapore
+    # BullMQ needs every key kept; with another policy queued jobs can vanish.
+    maxmemoryPolicy: noeviction
+    # Nothing outside Render may connect.
+    ipAllowList: []

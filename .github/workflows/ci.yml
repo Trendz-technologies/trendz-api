@@ -1,0 +1,91 @@
+# CI: lint → typecheck → tests (real Postgres, Redis and S3-compatible storage) → build.
+# Deploys are not started here: Render builds and deploys the `main` branch itself
+# (render.yaml). To hold a deploy until this workflow passes, set the service's
+# auto-deploy to "After CI Checks Pass" in Render.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trendz
+          POSTGRES_PASSWORD: trendz_ci_pw
+          POSTGRES_DB: trendz_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trendz -d trendz_test" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      # Throwaway CI-only values; nothing here is a real credential.
+      TEST_DATABASE_URL: postgresql://trendz:trendz_ci_pw@127.0.0.1:5432/trendz_test?schema=public
+      TEST_REDIS_URL: redis://127.0.0.1:6379/1
+      DATABASE_URL: postgresql://trendz:trendz_ci_pw@127.0.0.1:5432/trendz_test?schema=public
+      REDIS_URL: redis://127.0.0.1:6379/1
+      JWT_SECRET: ci-only-jwt-secret-ci-only-jwt-secret-0001
+      OTP_SECRET: ci-only-otp-secret-ci-only-otp-secret-0002
+      R2_ENDPOINT: http://127.0.0.1:9000
+      R2_ACCESS_KEY_ID: ci_minio
+      R2_SECRET_ACCESS_KEY: ci_minio_secret
+      R2_BUCKET_NAME: trendz-media
+      R2_PUBLIC_URL: http://127.0.0.1:9000/trendz-media
+      R2_FORCE_PATH_STYLE: "true"
+      WEB_URL: http://localhost:3100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Start S3-compatible storage (stands in for Cloudflare R2)
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=ci_minio -e MINIO_ROOT_PASSWORD=ci_minio_secret \
+            pgsty/minio:latest server /data
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:9000/minio/health/live && break; sleep 1; done
+
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Create storage bucket
+        run: npm run storage:init
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (incl. concurrent stock / payment idempotency)
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Dependency audit (production dependencies, high+)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
