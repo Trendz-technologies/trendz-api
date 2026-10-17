@@ -1,11 +1,13 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { authenticate, requireStaff } from "../../common/middleware/authenticate";
 import { requirePermission } from "../../common/guards/permissions";
+import { badRequest } from "../../common/errors/app-error";
 import { created, ok, paginationQuery, uuidParam } from "../../common/utils/http";
 import { auditContext } from "../audit/audit.service";
 import * as images from "../media/images.service";
 import { listCodesForProduct } from "../codes/codes.service";
+import { buildTemplate, importProduct, importProductSchema, MAX_IMPORT_FILE_BYTES, previewImport } from "./product-import";
 import { productInputSchema, productListQuery } from "./products.schemas";
 import * as products from "./products.service";
 
@@ -13,6 +15,24 @@ export const productsRouter = Router();
 productsRouter.use(authenticate, requireStaff);
 
 const imageParams = z.object({ id: z.uuid(), imageId: z.uuid() });
+
+// --- import from Excel (before "/:id", which would take "import" for an id) ---
+
+productsRouter.get("/import/template", requirePermission("products.write"), async (_req, res) => {
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", 'attachment; filename="trendz-product-import.xlsx"');
+  res.send(await buildTemplate());
+});
+
+// The workbook itself is the request body.
+productsRouter.post("/import/preview", requirePermission("products.write"), express.raw({ type: () => true, limit: MAX_IMPORT_FILE_BYTES }), async (req, res) => {
+  if (!Buffer.isBuffer(req.body) || !req.body.length) throw badRequest("Send the Excel file as the request body", "IMPORT_FILE_MISSING");
+  ok(res, await previewImport(req.body));
+});
+
+productsRouter.post("/import/product", requirePermission("products.write"), async (req, res) => {
+  ok(res, await importProduct(importProductSchema.parse(req.body), auditContext(req)));
+});
 
 productsRouter.get("/", requirePermission("products.read"), async (req, res) => {
   const { items, meta } = await products.listProducts(productListQuery.parse(req.query), paginationQuery.parse(req.query));
