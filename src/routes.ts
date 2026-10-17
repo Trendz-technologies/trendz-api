@@ -32,6 +32,7 @@ import { dashboardRouter, reportsRouter } from "./modules/reports/reports.routes
 import { emailLogsRouter, notificationsRouter, smsLogsRouter } from "./modules/notifications/notifications.routes";
 import { customersRouter } from "./modules/users/customers.routes";
 import { wishlistRouter } from "./modules/users/wishlist.routes";
+import { aiProductDraftRouter } from "./modules/ai/product-draft.routes";
 
 /** Every API module is mounted here, under /api. */
 export function apiRouter(): Router {
@@ -40,6 +41,7 @@ export function apiRouter(): Router {
   api.use(publicApiLimit);
 
   api.use("/auth", authRouter);
+  api.use("/ai", aiProductDraftRouter);
   api.use("/account", accountRouter);
   api.use("/account", accountOrdersRouter);
   api.use("/account", accountReturnsRouter);
