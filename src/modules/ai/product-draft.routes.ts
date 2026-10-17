@@ -65,7 +65,7 @@ async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCop
       input: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, brand, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
+          { type: "input_text", text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include “Trendz Women’s Wear” in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
           { type: "input_image", image_url: `data:${mimeType};base64,${image.toString("base64")}`, detail: "high" },
         ],
       }],
@@ -137,8 +137,8 @@ aiProductDraftRouter.post(
     }
 
     const [copy, rawGeneratedImage] = await Promise.all([
-      generateCopy(req.body, mimeType),
-      generateModelImage(req.body, mimeType),
+      generateCopy(await sharp(req.body).rotate().jpeg({ quality: 88 }).toBuffer(), "image/jpeg"),
+      generateModelImage(await sharp(req.body).rotate().jpeg({ quality: 88 }).toBuffer(), "image/jpeg"),
     ]);
     const generatedImage = await compressForUpload(rawGeneratedImage);
     ok(res, {
