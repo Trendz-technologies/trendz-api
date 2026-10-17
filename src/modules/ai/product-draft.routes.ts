@@ -11,6 +11,7 @@ export const aiProductDraftRouter = Router();
 aiProductDraftRouter.use(authenticate, requireStaff, requirePermission("products.write"));
 
 const rawImage = (["image/jpeg", "image/png", "image/webp", "image/avif"] as const);
+const MAX_AI_INPUT_BYTES = 10 * 1024 * 1024;
 
 type ProductCopy = {
   name: string;
@@ -122,7 +123,7 @@ aiProductDraftRouter.post(
   async (req, res) => {
     if (!env.OPENAI_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "AI product generation is not configured on the server.");
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw badRequest("Choose a garment image first.", "IMAGE_REQUIRED");
-    if (req.body.length > MAX_IMAGE_BYTES) throw new AppError(413, "IMAGE_TOO_LARGE", "Images must be 2 MB or smaller.");
+    if (req.body.length > MAX_AI_INPUT_BYTES) throw new AppError(413, "IMAGE_TOO_LARGE", "Garment photos must be 10 MB or smaller.");
 
     const mimeType = req.headers["content-type"]!.split(";")[0]!.trim().toLowerCase();
     if (!(rawImage as readonly string[]).includes(mimeType)) throw badRequest("Unsupported image type.", "INVALID_IMAGE_TYPE");
@@ -152,5 +153,5 @@ aiProductDraftRouter.post(
 
 function awaitableRawBody() {
   // Route-local parser: the global JSON parser intentionally ignores image/* requests.
-  return raw({ type: rawImage as unknown as string[], limit: MAX_IMAGE_BYTES });
+  return raw({ type: rawImage as unknown as string[], limit: MAX_AI_INPUT_BYTES });
 }
