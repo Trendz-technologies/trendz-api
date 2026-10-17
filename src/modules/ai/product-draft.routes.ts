@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { raw, Router } from "express";
 import sharp from "sharp";
 import { AppError, badRequest } from "../../common/errors/app-error";
 import { authenticate, requireStaff } from "../../common/middleware/authenticate";
@@ -152,6 +152,5 @@ aiProductDraftRouter.post(
 
 function awaitableRawBody() {
   // Route-local parser: the global JSON parser intentionally ignores image/* requests.
-  const { raw } = require("express") as typeof import("express");
   return raw({ type: rawImage as unknown as string[], limit: MAX_IMAGE_BYTES });
 }
