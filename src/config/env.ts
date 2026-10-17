@@ -24,6 +24,11 @@ const schema = z.object({
   // The API process also runs the background jobs (src/worker.ts is then not started). For hosts with a single process.
   RUN_WORKER_IN_API: bool,
 
+  // Optional AI-assisted product copy and model-photo generation; never expose this key to the browser.
+  OPENAI_API_KEY: optionalString,
+  OPENAI_TEXT_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
+  OPENAI_IMAGE_MODEL: z.string().trim().min(1).default("gpt-image-1"),
+
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
 
