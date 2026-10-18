@@ -6,7 +6,7 @@ import { requirePermission } from "../../common/guards/permissions";
 import { ok } from "../../common/utils/http";
 import { env } from "../../config/env";
 import { logger } from "../../config/logger";
-import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES } from "../../integrations/object-storage";
+import { ALLOWED_IMAGE_TYPES } from "../../integrations/object-storage";
 
 export const aiProductDraftRouter = Router();
 aiProductDraftRouter.use(authenticate, requireStaff, requirePermission("products.write"));
@@ -48,11 +48,21 @@ function parseProductCopy(value: unknown): ProductCopy {
   return result;
 }
 
-async function openAiJson(url: string, init: RequestInit) {
-  const response = await fetch(url, { ...init, signal: AbortSignal.timeout(90_000) });
+async function geminiJson(init: RequestInit) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_TEXT_MODEL}:generateContent`,
+    {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": env.GEMINI_API_KEY!,
+        ...init.headers,
+      },
+      signal: AbortSignal.timeout(90_000),
+    },
+  );
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) {
-    // Log only safe, bounded provider diagnostics; never log request payloads or credentials.
     const rawError = body && typeof body.error === "object" && body.error !== null
       ? body.error as Record<string, unknown>
       : {};
@@ -60,79 +70,45 @@ async function openAiJson(url: string, init: RequestInit) {
       ? value.replace(/[\r\n]+/g, " ").slice(0, 200)
       : undefined;
     logger.warn({
-      provider: "openai",
+      provider: "gemini",
       status: response.status,
-      requestId: safeText(response.headers.get("x-request-id")),
-      errorType: safeText(rawError.type),
-      errorCode: safeText(rawError.code),
+      errorStatus: safeText(rawError.status),
       errorMessage: safeText(rawError.message),
-    }, "AI provider request failed");
-    // Do not echo upstream response details or credentials into the API response.
-    throw new AppError(502, "AI_PROVIDER_ERROR", "AI generation failed. Please try again.");
+    }, "SEO AI provider request failed");
+    throw new AppError(502, "AI_PROVIDER_ERROR", "SEO generation failed. Please try again.");
   }
   return body;
 }
 
 async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCopy> {
-  const response = await openAiJson("https://api.openai.com/v1/responses", {
+  const response = await geminiJson({
     method: "POST",
-    headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: env.OPENAI_TEXT_MODEL,
-      input: [{
+      contents: [{
         role: "user",
-        content: [
-          { type: "input_text", text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include “Trendz Women’s Wear” in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
-          { type: "input_image", image_url: `data:${mimeType};base64,${image.toString("base64")}`, detail: "high" },
+        parts: [
+          { text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include Trendz Women’s Wear in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
+          { inlineData: { mimeType, data: image.toString("base64") } },
         ],
       }],
-      text: { format: { type: "json_object" } },
+      generationConfig: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 1400,
+      },
     }),
   });
-  // The raw Responses API payload may expose generated text only inside output[].content[].
-  // output_text is an SDK convenience field and is not guaranteed in the raw REST JSON.
-  const outputItems = Array.isArray(response?.output) ? response.output as Array<Record<string, unknown>> : [];
-  const outputText = typeof response?.output_text === "string"
-    ? response.output_text
-    : outputItems
-        .flatMap((item) => Array.isArray(item.content) ? item.content as Array<Record<string, unknown>> : [])
-        .filter((item) => item.type === "output_text" && typeof item.text === "string")
-        .map((item) => item.text as string)
-        .join("\n");
-  if (!outputText) throw new Error("AI did not return product copy");
-  return parseProductCopy(JSON.parse(outputText));
-}
-
-async function generateModelImage(image: Buffer, mimeType: string): Promise<Buffer> {
-  const form = new FormData();
-  form.append("model", env.OPENAI_IMAGE_MODEL);
-  form.append("prompt", "Create a premium photorealistic ecommerce fashion photograph of an adult Indian female model wearing the exact garment in the supplied reference photo. Preserve the garment's original colour palette, silhouette, neckline, sleeve shape, embroidery, motifs, trim, borders, fabric appearance, and dupatta exactly as visible. Do not redesign, simplify, recolour, add embellishments, or replace garment details. Show a graceful full-length standing pose with the complete outfit visible head to toe, neutral elegant studio background, natural proportions, professional soft studio lighting, subtle accessories that do not cover the garment. No text, watermark, logo, collage, or extra people. The garment is the priority; retain the reference garment design as faithfully as possible.");
-  form.append("size", "1024x1536");
-  form.append("input_fidelity", "high");
-  form.append("output_format", "jpeg");
-  form.append("image", new Blob([new Uint8Array(image)], { type: mimeType }), "garment-reference");
-
-  const response = await openAiJson("https://api.openai.com/v1/images/edits", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${env.OPENAI_API_KEY}` },
-    body: form,
-  });
-  const images = Array.isArray(response?.data) ? response.data as Array<Record<string, unknown>> : [];
-  const base64 = images[0]?.b64_json;
-  if (typeof base64 !== "string" || !base64) throw new Error("AI did not return a model image");
-  return Buffer.from(base64, "base64");
-}
-
-async function compressForUpload(image: Buffer): Promise<Buffer> {
-  for (const quality of [84, 78, 72, 66, 60, 54]) {
-    const output = await sharp(image, { limitInputPixels: 40_000_000 })
-      .rotate()
-      .resize({ width: 1200, height: 1600, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality, mozjpeg: true })
-      .toBuffer();
-    if (output.byteLength <= MAX_IMAGE_BYTES) return output;
+  const candidates = Array.isArray(response?.candidates) ? response.candidates as Array<Record<string, unknown>> : [];
+  const content = candidates[0]?.content && typeof candidates[0].content === "object"
+    ? candidates[0].content as Record<string, unknown>
+    : {};
+  const parts = Array.isArray(content.parts) ? content.parts as Array<Record<string, unknown>> : [];
+  const outputText = parts.filter((part) => typeof part.text === "string").map((part) => part.text as string).join("");
+  if (!outputText) throw new AppError(502, "AI_EMPTY_RESPONSE", "SEO AI did not return product details. Please try again.");
+  try {
+    return parseProductCopy(JSON.parse(outputText));
+  } catch {
+    throw new AppError(502, "AI_INVALID_RESPONSE", "SEO AI returned incomplete product details. Please try again.");
   }
-  throw new AppError(422, "AI_IMAGE_TOO_LARGE", "The generated image could not be compressed below the 2 MB upload limit. Please try again.");
 }
 
 aiProductDraftRouter.post(
@@ -146,7 +122,7 @@ aiProductDraftRouter.post(
   },
   (awaitableRawBody()),
   async (req, res) => {
-    if (!env.OPENAI_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "AI product generation is not configured on the server.");
+    if (!env.GEMINI_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "SEO generation is not configured. Add GEMINI_API_KEY to the backend environment.");
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw badRequest("Choose a garment image first.", "IMAGE_REQUIRED");
     if (req.body.length > MAX_AI_INPUT_BYTES) throw new AppError(413, "IMAGE_TOO_LARGE", "Garment photos must be 10 MB or smaller.");
 
@@ -162,17 +138,9 @@ aiProductDraftRouter.post(
       throw badRequest("Use a single-frame image with dimensions up to 40 megapixels.", "INVALID_IMAGE_DIMENSIONS");
     }
 
-    const [copy, rawGeneratedImage] = await Promise.all([
-      generateCopy(await sharp(req.body).rotate().jpeg({ quality: 88 }).toBuffer(), "image/jpeg"),
-      generateModelImage(await sharp(req.body).rotate().jpeg({ quality: 88 }).toBuffer(), "image/jpeg"),
-    ]);
-    const generatedImage = await compressForUpload(rawGeneratedImage);
-    ok(res, {
-      ...copy,
-      generatedImageBase64: generatedImage.toString("base64"),
-      generatedImageMimeType: "image/jpeg",
-      generatedImageBytes: generatedImage.byteLength,
-    });
+    const normalizedImage = await sharp(req.body).rotate().jpeg({ quality: 88 }).toBuffer();
+    const copy = await generateCopy(normalizedImage, "image/jpeg");
+    ok(res, copy);
   },
 );
 
