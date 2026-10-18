@@ -24,7 +24,10 @@ const schema = z.object({
   // The API process also runs the background jobs (src/worker.ts is then not started). For hosts with a single process.
   RUN_WORKER_IN_API: bool,
 
-  // Optional server-side AI product copy and model-photo generation.
+  // Optional Gemini API for SEO/product copy from the uploaded garment photo.
+  GEMINI_API_KEY: optionalString,
+  GEMINI_TEXT_MODEL: z.string().trim().min(1).default("gemini-2.5-flash"),
+  // Legacy OpenAI settings remain available for other integrations, but SEO drafting no longer uses them.
   OPENAI_API_KEY: optionalString,
   OPENAI_TEXT_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
   OPENAI_IMAGE_MODEL: z.string().trim().min(1).default("gpt-image-1"),
