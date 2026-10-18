@@ -24,9 +24,9 @@ const schema = z.object({
   // The API process also runs the background jobs (src/worker.ts is then not started). For hosts with a single process.
   RUN_WORKER_IN_API: bool,
 
-  // Optional Gemini API for SEO/product copy from the uploaded garment photo.
-  GEMINI_API_KEY: optionalString,
-  GEMINI_TEXT_MODEL: z.string().trim().min(1).default("gemini-3.8-flash"),
+  // Optional Groq vision API for SEO/product copy from the uploaded garment photo.
+  GROQ_API_KEY: optionalString,
+  GROQ_VISION_MODEL: z.string().trim().min(1).default("qwen/qwen3.8-27b"),
   // Legacy OpenAI settings remain available for other integrations, but SEO drafting no longer uses them.
   OPENAI_API_KEY: optionalString,
   OPENAI_TEXT_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
