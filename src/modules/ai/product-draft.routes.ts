@@ -73,7 +73,16 @@ async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCop
       text: { format: { type: "json_object" } },
     }),
   });
-  const outputText = typeof response?.output_text === "string" ? response.output_text : "";
+  // The raw Responses API payload may expose generated text only inside output[].content[].
+  // output_text is an SDK convenience field and is not guaranteed in the raw REST JSON.
+  const outputItems = Array.isArray(response?.output) ? response.output as Array<Record<string, unknown>> : [];
+  const outputText = typeof response?.output_text === "string"
+    ? response.output_text
+    : outputItems
+        .flatMap((item) => Array.isArray(item.content) ? item.content as Array<Record<string, unknown>> : [])
+        .filter((item) => item.type === "output_text" && typeof item.text === "string")
+        .map((item) => item.text as string)
+        .join("\n");
   if (!outputText) throw new Error("AI did not return product copy");
   return parseProductCopy(JSON.parse(outputText));
 }
