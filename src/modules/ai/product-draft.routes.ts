@@ -5,6 +5,7 @@ import { authenticate, requireStaff } from "../../common/middleware/authenticate
 import { requirePermission } from "../../common/guards/permissions";
 import { ok } from "../../common/utils/http";
 import { env } from "../../config/env";
+import { logger } from "../../config/logger";
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES } from "../../integrations/object-storage";
 
 export const aiProductDraftRouter = Router();
@@ -51,6 +52,21 @@ async function openAiJson(url: string, init: RequestInit) {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(90_000) });
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) {
+    // Log only safe, bounded provider diagnostics; never log request payloads or credentials.
+    const rawError = body && typeof body.error === "object" && body.error !== null
+      ? body.error as Record<string, unknown>
+      : {};
+    const safeText = (value: unknown) => typeof value === "string"
+      ? value.replace(/[\r\n]+/g, " ").slice(0, 200)
+      : undefined;
+    logger.warn({
+      provider: "openai",
+      status: response.status,
+      requestId: safeText(response.headers.get("x-request-id")),
+      errorType: safeText(rawError.type),
+      errorCode: safeText(rawError.code),
+      errorMessage: safeText(rawError.message),
+    }, "AI provider request failed");
     // Do not echo upstream response details or credentials into the API response.
     throw new AppError(502, "AI_PROVIDER_ERROR", "AI generation failed. Please try again.");
   }
