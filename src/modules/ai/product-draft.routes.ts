@@ -67,7 +67,7 @@ async function geminiJson(init: RequestInit) {
       ? body.error as Record<string, unknown>
       : {};
     const safeText = (value: unknown) => typeof value === "string"
-      ? value.replace(/[\\r\\n]+/g, " ").slice(0, 200)
+      ? value.replace(/[\r\n]+/g, " ").slice(0, 200)
       : undefined;
     logger.warn({
       provider: "gemini",
@@ -87,7 +87,7 @@ async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCop
       contents: [{
         role: "user",
         parts: [
-          { text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include \\"Trendz Women’s Wear\\" in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
+          { text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include Trendz Women’s Wear in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
           { inlineData: { mimeType, data: image.toString("base64") } },
         ],
       }],
@@ -102,7 +102,7 @@ async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCop
     ? candidates[0].content as Record<string, unknown>
     : {};
   const parts = Array.isArray(content.parts) ? content.parts as Array<Record<string, unknown>> : [];
-  const outputText = parts.filter((part) => typeof part.text === "string").map((part) => part.text as string).join("\\n");
+  const outputText = parts.filter((part) => typeof part.text === "string").map((part) => part.text as string).join("");
   if (!outputText) throw new AppError(502, "AI_EMPTY_RESPONSE", "SEO AI did not return product details. Please try again.");
   try {
     return parseProductCopy(JSON.parse(outputText));
