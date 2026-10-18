@@ -57,7 +57,7 @@ async function openAiJson(url: string, init: RequestInit) {
       ? body.error as Record<string, unknown>
       : {};
     const safeText = (value: unknown) => typeof value === "string"
-      ? value.replace(/[\\r\\n]+/g, " ").slice(0, 200)
+      ? value.replace(/[\r\n]+/g, " ").slice(0, 200)
       : undefined;
     logger.warn({
       provider: "openai",
