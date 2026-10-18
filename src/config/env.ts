@@ -26,7 +26,7 @@ const schema = z.object({
 
   // Optional Gemini API for SEO/product copy from the uploaded garment photo.
   GEMINI_API_KEY: optionalString,
-  GEMINI_TEXT_MODEL: z.string().trim().min(1).default("gemini-2.5-flash"),
+  GEMINI_TEXT_MODEL: z.string().trim().min(1).default("gemini-3.8-flash"),
   // Legacy OpenAI settings remain available for other integrations, but SEO drafting no longer uses them.
   OPENAI_API_KEY: optionalString,
   OPENAI_TEXT_MODEL: z.string().trim().min(1).default("gpt-4.1-mini"),
