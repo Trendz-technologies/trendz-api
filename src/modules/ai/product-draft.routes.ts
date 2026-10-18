@@ -48,32 +48,43 @@ function parseProductCopy(value: unknown): ProductCopy {
   return result;
 }
 
-async function geminiJson(init: RequestInit) {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_TEXT_MODEL}:generateContent`,
-    {
-      ...init,
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": env.GEMINI_API_KEY!,
-        ...init.headers,
-      },
-      signal: AbortSignal.timeout(90_000),
+async function groqJson(image: Buffer, mimeType: string) {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${env.GROQ_API_KEY!}`,
     },
-  );
+    body: JSON.stringify({
+      model: env.GROQ_VISION_MODEL,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include Trendz Women's Wear in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
+          { type: "image_url", image_url: { url: `data:${mimeType};base64,${image.toString("base64")}` } },
+        ],
+      }],
+      response_format: { type: "json_object" },
+      temperature: 0.2,
+      max_completion_tokens: 1400,
+    }),
+    signal: AbortSignal.timeout(90_000),
+  });
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok) {
     const rawError = body && typeof body.error === "object" && body.error !== null
       ? body.error as Record<string, unknown>
       : {};
     const safeText = (value: unknown) => typeof value === "string"
-      ? value.replace(/[\r\n]+/g, " ").slice(0, 200)
+      ? value.replace(/[\\r\\n]+/g, " ").slice(0, 200)
       : undefined;
     logger.warn({
-      provider: "gemini",
+      provider: "groq",
       status: response.status,
-      errorStatus: safeText(rawError.status),
+      errorType: safeText(rawError.type),
+      errorCode: safeText(rawError.code),
       errorMessage: safeText(rawError.message),
+      model: env.GROQ_VISION_MODEL,
     }, "SEO AI provider request failed");
     throw new AppError(502, "AI_PROVIDER_ERROR", "SEO generation failed. Please try again.");
   }
@@ -81,28 +92,12 @@ async function geminiJson(init: RequestInit) {
 }
 
 async function generateCopy(image: Buffer, mimeType: string): Promise<ProductCopy> {
-  const response = await geminiJson({
-    method: "POST",
-    body: JSON.stringify({
-      contents: [{
-        role: "user",
-        parts: [
-          { text: "Create ecommerce product copy for Trendz Women's Wear from this garment photo. Return JSON only with keys name, productType, shortDescription, description, seoTitle, seoDescription, seoKeywords, tags (array of strings). Describe only details clearly visible in the image. Do not guess fabric composition, exact materials, origin, care instructions, price, sizes, stock, or occasion-specific claims not supported by the photo. Include Trendz Women’s Wear in the SEO title if it fits the 70-character limit. Mention visible colours, silhouette, neckline, sleeve and embroidery/border details where clear. Keep the name natural, SEO title at most 70 characters, SEO description at most 170 characters, shortDescription at most 500 characters, tags lowercase." },
-          { inlineData: { mimeType, data: image.toString("base64") } },
-        ],
-      }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        maxOutputTokens: 1400,
-      },
-    }),
-  });
-  const candidates = Array.isArray(response?.candidates) ? response.candidates as Array<Record<string, unknown>> : [];
-  const content = candidates[0]?.content && typeof candidates[0].content === "object"
-    ? candidates[0].content as Record<string, unknown>
+  const response = await groqJson(image, mimeType);
+  const choices = Array.isArray(response?.choices) ? response.choices as Array<Record<string, unknown>> : [];
+  const message = choices[0]?.message && typeof choices[0].message === "object"
+    ? choices[0].message as Record<string, unknown>
     : {};
-  const parts = Array.isArray(content.parts) ? content.parts as Array<Record<string, unknown>> : [];
-  const outputText = parts.filter((part) => typeof part.text === "string").map((part) => part.text as string).join("");
+  const outputText = typeof message.content === "string" ? message.content : "";
   if (!outputText) throw new AppError(502, "AI_EMPTY_RESPONSE", "SEO AI did not return product details. Please try again.");
   try {
     return parseProductCopy(JSON.parse(outputText));
@@ -122,7 +117,7 @@ aiProductDraftRouter.post(
   },
   (awaitableRawBody()),
   async (req, res) => {
-    if (!env.GEMINI_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "SEO generation is not configured. Add GEMINI_API_KEY to the backend environment.");
+    if (!env.GROQ_API_KEY) throw new AppError(503, "AI_NOT_CONFIGURED", "SEO generation is not configured. Add GROQ_API_KEY to the backend environment.");
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) throw badRequest("Choose a garment image first.", "IMAGE_REQUIRED");
     if (req.body.length > MAX_AI_INPUT_BYTES) throw new AppError(413, "IMAGE_TOO_LARGE", "Garment photos must be 10 MB or smaller.");
 
